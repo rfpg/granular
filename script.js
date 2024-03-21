@@ -1,63 +1,61 @@
-// Existing functions remain unchanged
-// Modify the playAudio function and add new functions for granular synthesis
+document.addEventListener('DOMContentLoaded', () => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let audioBufferSourceNode = null;
+    let audioBuffer = null;
 
-function playAudio(file) {
-    var context = new (window.AudioContext || window.webkitAudioContext)();
-    var source = context.createBufferSource();
-    var pitchControl = document.getElementById('pitchSlider');
-    var grainDuration = 0.1; // Duration of each grain in seconds
-    var overlapRatio = 0.5; // Overlap between grains
+    const dropZone = document.getElementById('drop_zone');
+    const pitchSlider = document.getElementById('pitchSlider');
 
-    context.decodeAudioData(file, function(buffer) {
-        var duration = buffer.duration;
-        var channelData = buffer.getChannelData(0); // Assuming mono audio for simplicity
+    function handleFileSelect(file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            audioContext.decodeAudioData(event.target.result, function(buffer) {
+                audioBuffer = buffer;
+                playAudio(buffer);
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    }
 
-        // Calculate grain parameters
-        var grainSize = Math.floor(grainDuration * context.sampleRate);
-        var halfGrainSize = grainSize / 2;
-        var numGrains = Math.ceil(duration / grainDuration * overlapRatio);
+    function playAudio(buffer) {
+        if (audioBufferSourceNode) {
+            audioBufferSourceNode.stop();
+        }
+        audioBufferSourceNode = audioContext.createBufferSource();
+        audioBufferSourceNode.buffer = buffer;
+        audioBufferSourceNode.connect(audioContext.destination);
+        audioBufferSourceNode.start(0);
+    }
 
-        // Setup grains
-        for (var i = 0; i < numGrains; i++) {
-            var grainSource1 = context.createBufferSource();
-            var grainSource2 = context.createBufferSource();
-            var grainBuffer = context.createBuffer(1, grainSize, context.sampleRate);
+    function adjustPitch() {
+        if (!audioBuffer) return;
+        // Creating a new buffer source node for pitch adjustment, since the playbackRate
+        // cannot be adjusted on a node that has already started playing.
+        const playbackRate = pitchSlider.value;
+        const sourceNode = audioContext.createBufferSource();
+        sourceNode.buffer = audioBuffer;
+        sourceNode.playbackRate.value = playbackRate;
+        sourceNode.connect(audioContext.destination);
+        if (audioBufferSourceNode) {
+            audioBufferSourceNode.stop();
+        }
+        audioBufferSourceNode = sourceNode;
+        audioBufferSourceNode.start(0);
+    }
 
-            // Fill grainBuffer with audio data
-            var offset = i * halfGrainSize;
-            if (offset + grainSize > channelData.length) {
-                break; // Avoid reading beyond buffer
-            }
-            grainBuffer.copyToChannel(channelData.subarray(offset, offset + grainSize), 0, 0);
-
-            grainSource1.buffer = grainBuffer;
-            grainSource2.buffer = grainBuffer;
-            
-            // Connect and play grains with phase offset
-            grainSource1.connect(context.destination);
-            grainSource2.connect(context.destination);
-            grainSource1.start(context.currentTime + i * grainDuration * overlapRatio);
-            grainSource2.start(context.currentTime + i * grainDuration * overlapRatio + grainDuration * 0.5);
-
-            // Apply pitch control
-            grainSource1.playbackRate.value = pitchControl.value;
-            grainSource2.playbackRate.value = pitchControl.value;
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileSelect(files[0]);
         }
     });
 
-    // Event listener for the pitch slider
-    pitchControl.addEventListener('input', function() {
-        // Since we're initiating playback on drop, there's no continuous pitch control applied to ongoing grains.
-        // Implementing real-time pitch control on granular synthesis in this setup would require a more complex approach,
-        // such as continuously adjusting the playback rate of new grains based on slider input.
-        console.log("Pitch adjusted to: " + pitchControl.value + ". Real-time pitch adjustment is not implemented in this basic example.");
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
     });
-}
 
-document.addEventListener('DOMContentLoaded', function() {
-    var canvas = document.getElementById('audio_visualizer');
-    canvas.width = document.getElementById('drop_zone').offsetWidth;
-    var dropZone = document.getElementById('drop_zone');
-    dropZone.addEventListener('drop', dropHandler);
-    dropZone.addEventListener('dragover', dragOverHandler);
+    pitchSlider.addEventListener('input', adjustPitch);
 });
