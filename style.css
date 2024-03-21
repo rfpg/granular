@@ -11,3 +11,14 @@ canvas {
     height: 200px;
     background-color: #f3f3f3;
 }
+
+/* Existing CSS */
+/* Add below */
+#controls {
+    margin: 20px;
+    text-align: center;
+}
+
+label {
+    margin-right: 10px;
+}
