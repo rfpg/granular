@@ -1,0 +1,13 @@
+#drop_zone {
+    border: 2px dashed #007bff;
+    border-radius: 5px;
+    padding: 50px;
+    text-align: center;
+    margin: 20px;
+}
+
+canvas {
+    width: 100%;
+    height: 200px;
+    background-color: #f3f3f3;
+}

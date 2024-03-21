@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Sample Drop and Playback</title>
+    <link rel="stylesheet" href="style.css"> <!-- Assuming your CSS file is named style.css -->
+</head>
+<body>
+
+<div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+    <p>Drag one audio file here to play it.</p>
+    <canvas id="audio_visualizer"></canvas>
+</div>
+<audio id="audio_player" controls></audio>
+
+<script src="script.js"></script> <!-- Assuming your JavaScript file is named script.js -->
+</body>
+</html>
