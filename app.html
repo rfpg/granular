@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Audio Sample Drop and Playback</title>
+    <title>Audio Sample Drop, Playback, and Effects</title>
     <style>
         #drop_zone {
             border: 2px dashed #007bff;
@@ -10,14 +10,14 @@
             padding: 50px;
             text-align: center;
             margin: 20px;
-            width: calc(100% - 40px); /* Adjust width to account for margin */
-            box-sizing: border-box; /* Include padding and border in the element's total width and height */
         }
         
         #audio_visualizer {
             width: 100%;
-            height: 200px;
+            height: 100px;
             background-color: #f3f3f3;
+            display: block;
+            margin-top: 20px;
         }
         
         #controls {
@@ -34,39 +34,67 @@
 
 <div id="drop_zone">
     <p>Drag one audio file here to play it.</p>
-    <canvas id="audio_visualizer"></canvas>
 </div>
-<audio id="audio_player" controls style="width:100%;"></audio>
-
 <div id="controls">
     <label for="pitchSlider">Pitch Control:</label>
     <input type="range" id="pitchSlider" min="0.5" max="2" value="1" step="0.01">
 </div>
+<canvas id="audio_visualizer"></canvas>
+<audio id="audio_player" controls></audio>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var sourceNode;
     var dropZone = document.getElementById('drop_zone');
-    var audioPlayer = document.getElementById('audio_player');
+    var pitchSlider = document.getElementById('pitchSlider');
+    var canvas = document.getElementById('audio_visualizer');
+    var canvasCtx = canvas.getContext('2d');
+
+    function drawWaveform(buffer) {
+        var data = buffer.getChannelData(0);
+        var step = Math.ceil(data.length / canvas.width);
+        var amp = canvas.height / 2;
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        canvasCtx.beginPath();
+        for (var i = 0; i < canvas.width; i++) {
+            var min = 1.0;
+            var max = -1.0;
+            for (var j = 0; j < step; j++) {
+                var datum = data[(i * step) + j];
+                if (datum < min) min = datum;
+                if (datum > max) max = datum;
+            }
+            canvasCtx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
+        }
+    }
 
     dropZone.addEventListener('dragover', function(ev) {
-        ev.preventDefault(); // Prevent default behavior (Prevent file from being opened)
+        ev.preventDefault();
     });
 
     dropZone.addEventListener('drop', function(ev) {
-        ev.preventDefault(); // Prevent the default action (open as link for some elements)
+        ev.preventDefault();
         if (ev.dataTransfer.items) {
-            for (var i = 0; i < ev.dataTransfer.items.length; i++) {
-                if (ev.dataTransfer.items[i].kind === 'file') {
-                    var file = ev.dataTransfer.items[i].getAsFile();
-                    var reader = new FileReader();
-                    reader.onload = function(e) {
-                        audioPlayer.src = e.target.result;
-                        audioPlayer.play();
+            var file = ev.dataTransfer.items[0].getAsFile();
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                audioCtx.decodeAudioData(e.target.result, function(buffer) {
+                    if (sourceNode) {
+                        sourceNode.disconnect();
+                    }
+                    sourceNode = audioCtx.createBufferSource();
+                    sourceNode.buffer = buffer;
+                    sourceNode.connect(audioCtx.destination);
+                    drawWaveform(buffer);
+                    sourceNode.start(0);
+                    pitchSlider.oninput = function() {
+                        var playbackRate = parseFloat(pitchSlider.value);
+                        sourceNode.playbackRate.value = playbackRate;
                     };
-                    reader.readAsDataURL(file);
-                    break; // Assuming you only need to process the first file
-                }
-            }
+                });
+            };
+            reader.readAsArrayBuffer(file);
         }
     });
 });
