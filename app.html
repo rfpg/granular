@@ -7,49 +7,67 @@
 <body>
 
 <input type="file" id="audioInput" accept="audio/*">
-<audio id="audioPlayer" controls></audio>
+<!-- Slider for controlling playback speed -->
+<label for="speedSlider">Playback Speed (0.5 to 2.0):</label>
+<input type="range" id="speedSlider" min="0.5" max="2.0" value="1" step="0.01">
 
 <script>
+let audioCtx;
+let audioBuffer;
+
 document.getElementById('audioInput').addEventListener('change', function(event) {
     const file = event.target.files[0];
     if (!file) {
         return;
     }
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const reader = new FileReader();
 
     reader.onload = function(fileEvent) {
         const arrayBuffer = fileEvent.target.result;
 
         // Decode the audio file data in arrayBuffer
-        audioCtx.decodeAudioData(arrayBuffer, function(audioBuffer) {
-            // Process each sample and create a new buffer
-            const outputBuffer = audioCtx.createBuffer(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
-
-            // Iterate over each channel
-            for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
-                const inputData = audioBuffer.getChannelData(channel);
-                const outputData = outputBuffer.getChannelData(channel);
-
-                // Iterate over each sample
-                for (let sample = 0; sample < audioBuffer.length; sample++) {
-                    // This is where you can process each sample. Here we're just copying the input to the output.
-                    console.log("Sample number: " + sample);
-                    outputData[sample] = inputData[sample];
-                }
-            }
-
-            // Play the processed buffer
-            const source = audioCtx.createBufferSource();
-            source.buffer = outputBuffer;
-            source.connect(audioCtx.destination);
-            source.start();
-        }, function(e){"Error with decoding audio data" + e.err});
+        audioCtx.decodeAudioData(arrayBuffer, function(decodedBuffer) {
+            audioBuffer = decodedBuffer; // Store the decoded buffer for later use
+        }, function(e) {
+            console.log("Error with decoding audio data" + e.err);
+        });
     };
 
     reader.readAsArrayBuffer(file);
 });
+
+document.getElementById('speedSlider').addEventListener('input', function() {
+    let speedFactor = parseFloat(this.value);
+    processAndPlayAudio(speedFactor); // Process and play the audio at the selected speed
+});
+
+function processAndPlayAudio(speedFactor) {
+    if (!audioBuffer) return; // Ensure there's an audio buffer to process
+
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const originalLength = audioBuffer.length;
+    const newLength = Math.floor(originalLength / speedFactor);
+    const outputBuffer = audioCtx.createBuffer(numberOfChannels, newLength, sampleRate);
+
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+        const inputData = audioBuffer.getChannelData(channel);
+        const outputData = outputBuffer.getChannelData(channel);
+
+        for (let sample = 0; sample < newLength; sample++) {
+            const originalSampleIndex = Math.floor(sample * speedFactor);
+            outputData[sample] = inputData[originalSampleIndex];
+        }
+    }
+
+    // Play the processed buffer
+    const source = audioCtx.createBufferSource();
+    source.buffer = outputBuffer;
+    source.connect(audioCtx.destination);
+    source.start();
+}
 </script>
 </body>
 </html>
