@@ -7,13 +7,15 @@
 <body>
 
 <input type="file" id="audioInput" accept="audio/*">
+<!-- Removed the audioPlayer as it's not used in the script -->
+
 <!-- Slider for controlling playback speed -->
 <label for="speedSlider">Playback Speed (0.5 to 2.0):</label>
-<input type="range" id="speedSlider" min="0.5" max="2.0" value="1" step="0.01">
+<input type="range" id="speedSlider" min="0.5" max="2.0" value="1" step="0.01" disabled>
 
 <script>
-let audioCtx;
-let audioBuffer;
+var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+var audioBuffer; // To store the decoded audio for processing
 
 document.getElementById('audioInput').addEventListener('change', function(event) {
     const file = event.target.files[0];
@@ -21,53 +23,56 @@ document.getElementById('audioInput').addEventListener('change', function(event)
         return;
     }
 
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const reader = new FileReader();
 
-    reader.onload = function(fileEvent) {
+    reader.onload = async function(fileEvent) {
         const arrayBuffer = fileEvent.target.result;
 
-        // Decode the audio file data in arrayBuffer
-        audioCtx.decodeAudioData(arrayBuffer, function(decodedBuffer) {
-            audioBuffer = decodedBuffer; // Store the decoded buffer for later use
-        }, function(e) {
-            console.log("Error with decoding audio data" + e.err);
-        });
+        try {
+            audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            document.getElementById('speedSlider').disabled = false; // Enable the slider after loading the audio
+        } catch(e) {
+            console.error("Error with decoding audio data", e);
+        }
     };
 
     reader.readAsArrayBuffer(file);
 });
 
 document.getElementById('speedSlider').addEventListener('input', function() {
-    let speedFactor = parseFloat(this.value);
-    processAndPlayAudio(speedFactor); // Process and play the audio at the selected speed
+    processAndPlayAudio(parseFloat(this.value));
 });
 
 function processAndPlayAudio(speedFactor) {
-    if (!audioBuffer) return; // Ensure there's an audio buffer to process
+    if (!audioBuffer) {
+        console.log("No audio loaded");
+        return;
+    }
 
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    const sampleRate = audioBuffer.sampleRate;
-    const originalLength = audioBuffer.length;
-    const newLength = Math.floor(originalLength / speedFactor);
-    const outputBuffer = audioCtx.createBuffer(numberOfChannels, newLength, sampleRate);
+    // Calculate new length based on speedFactor
+    const newLength = Math.floor(audioBuffer.length / speedFactor);
+    const outputBuffer = audioCtx.createBuffer(audioBuffer.numberOfChannels, newLength, audioBuffer.sampleRate);
 
-    for (let channel = 0; channel < numberOfChannels; channel++) {
+    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
         const inputData = audioBuffer.getChannelData(channel);
         const outputData = outputBuffer.getChannelData(channel);
 
         for (let sample = 0; sample < newLength; sample++) {
-            const originalSampleIndex = Math.floor(sample * speedFactor);
+            const originalSampleIndex = Math.min(Math.floor(sample * speedFactor), audioBuffer.length - 1);
             outputData[sample] = inputData[originalSampleIndex];
         }
     }
 
-    // Play the processed buffer
     const source = audioCtx.createBufferSource();
     source.buffer = outputBuffer;
     source.connect(audioCtx.destination);
-    source.start();
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume(); // If the AudioContext was suspended, resume it to enable playback
+    }
+    source.start(0); // Start playback immediately
 }
+
 </script>
 </body>
 </html>
+
