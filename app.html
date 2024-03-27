@@ -7,17 +7,21 @@
         #drop_zone {
             border: 2px dashed #007bff;
             border-radius: 5px;
-            padding: 50px;
+            padding: 20px;
             text-align: center;
             margin: 20px;
+            position: relative; /* Make drop_zone a positioning context */
+            height: 200px; /* Set a fixed height */
+            box-sizing: border-box;
         }
         
         #audio_visualizer {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
-            height: 100px;
-            background-color: #f3f3f3;
-            display: block;
-            margin-top: 20px;
+            height: 100%;
+            background-color: transparent;
         }
         
         #controls {
@@ -34,13 +38,14 @@
 
 <div id="drop_zone">
     <p>Drag one audio file here to play it.</p>
+    <canvas id="audio_visualizer"></canvas>
 </div>
 <div id="controls">
     <label for="pitchSlider">Pitch Control:</label>
     <input type="range" id="pitchSlider" min="0.5" max="2" value="1" step="0.01">
 </div>
-<canvas id="audio_visualizer"></canvas>
-<audio id="audio_player" controls></audio>
+<!-- Removed controls from the audio player -->
+<audio id="audio_player" style="width:100%;"></audio>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -50,13 +55,17 @@ document.addEventListener('DOMContentLoaded', function() {
     var pitchSlider = document.getElementById('pitchSlider');
     var canvas = document.getElementById('audio_visualizer');
     var canvasCtx = canvas.getContext('2d');
+    var animationFrameId;
+    var startTime = 0; // Start time of the playback
+    var offsetTime = 0; // Offset to calculate correct position during pitch changes
 
     function drawWaveform(buffer) {
         var data = buffer.getChannelData(0);
         var step = Math.ceil(data.length / canvas.width);
         var amp = canvas.height / 2;
+        canvasCtx.fillStyle = "rgb(200,200,200)";
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-        canvasCtx.beginPath();
+
         for (var i = 0; i < canvas.width; i++) {
             var min = 1.0;
             var max = -1.0;
@@ -66,6 +75,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (datum > max) max = datum;
             }
             canvasCtx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
+        }
+    }
+
+    function updatePlayhead(currentTime, duration) {
+        var progress = currentTime / duration;
+        var x = progress * canvas.width;
+        canvasCtx.strokeStyle = "red";
+        canvasCtx.lineWidth = 2;
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(x, 0);
+        canvasCtx.lineTo(x, canvas.height);
+        canvasCtx.stroke();
+    }
+
+    function animate() {
+        var currentTime = (audioCtx.currentTime - startTime + offsetTime) * sourceNode.playbackRate.value;
+        if (sourceNode && !sourceNode.paused) {
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+            drawWaveform(sourceNode.buffer);
+            updatePlayhead(currentTime, sourceNode.buffer.duration / sourceNode.playbackRate.value);
+            animationFrameId = requestAnimationFrame(animate);
         }
     }
 
@@ -79,6 +109,9 @@ document.addEventListener('DOMContentLoaded', function() {
             var file = ev.dataTransfer.items[0].getAsFile();
             var reader = new FileReader();
             reader.onload = function(e) {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
                 audioCtx.decodeAudioData(e.target.result, function(buffer) {
                     if (sourceNode) {
                         sourceNode.disconnect();
@@ -88,15 +121,34 @@ document.addEventListener('DOMContentLoaded', function() {
                     sourceNode.connect(audioCtx.destination);
                     drawWaveform(buffer);
                     sourceNode.start(0);
-                    pitchSlider.oninput = function() {
-                        var playbackRate = parseFloat(pitchSlider.value);
-                        sourceNode.playbackRate.value = playbackRate;
-                    };
+                    startTime = audioCtx.currentTime;
+                    offsetTime = 0;
+                    animate();
                 });
             };
             reader.readAsArrayBuffer(file);
         }
     });
+
+    pitchSlider.oninput = function() {
+        var playbackRate = parseFloat(pitchSlider.value);
+        if (sourceNode) {
+            var currentTime = (audioCtx.currentTime - startTime + offsetTime);
+            offsetTime = currentTime - (currentTime / playbackRate);
+            sourceNode.playbackRate.value = playbackRate;
+        }
+    };
+
+     // Adjust canvas size to fit drop_zone
+    function adjustCanvasSize() {
+        canvas.width = dropZone.offsetWidth;
+        canvas.height = dropZone.offsetHeight;
+    }
+
+    // Call adjustCanvasSize on page load and window resize
+    window.addEventListener('load', adjustCanvasSize);
+    window.addEventListener('resize', adjustCanvasSize);
+
 });
 </script>
 </body>
