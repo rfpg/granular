@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Enhanced Audio Playback with Waveform and Playhead</title>
-    <style>
+     <style>
         body {
             font-family: Arial, sans-serif;
         }
@@ -53,6 +53,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // Initial setup unchanged
     const dropZone = document.getElementById('drop_zone');
     const pitchSlider = document.getElementById('pitchSlider');
     const canvas = document.getElementById('audio_visualizer');
@@ -86,7 +87,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    function playAudioFile(file) {
+});
+
+
+ function playAudioFile(file) {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -101,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sourceNode.buffer = buffer;
                 sourceNode.connect(audioCtx.destination);
                 sourceNode.start(0);
+                sourceNode.startTime = audioCtx.currentTime; // Set startTime here to ensure accurate playhead positioning
                 duration = buffer.duration;
                 visualize(buffer);
                 sourceNode.onended = () => cancelAnimationFrame(animationFrameId);
@@ -108,56 +113,44 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         reader.readAsArrayBuffer(file);
     }
+   
 
-    function visualize(buffer) {
-        const bufferLength = buffer.length;
-        const data = buffer.getChannelData(0);
-        const step = Math.ceil(data.length / canvas.width);
-        const amp = canvas.height / 2;
+function visualize(buffer) {
+    // Initial drawing logic unchanged
+    const bufferLength = buffer.length;
+    const data = buffer.getChannelData(0);
+    const step = Math.ceil(data.length / canvas.width);
+    const amp = canvas.height / 2;
 
-        function draw() {
-            const playbackTime = sourceNode.context.currentTime - sourceNode.startTime;
-            const playheadX = playbackTime / duration * canvas.width;
+    function draw() {
+        // Adjust playhead drawing logic here
+        const currentTime = (audioCtx.currentTime - sourceNode.startTime) * sourceNode.playbackRate.value;
+        const playheadX = currentTime / duration * canvas.width;
 
-            ctx.fillStyle = '#f8f8f8';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.lineWidth = 1;
-            ctx.strokeStyle = '#d3d3d3';
+        // Redraw canvas and waveform
+        ctx.fillStyle = '#f8f8f8';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawWaveform(); // You might need to adjust or re-implement drawWaveform function
 
-            ctx.beginPath();
-            for (let i = 0; i < canvas.width; i++) {
-                let min = 1.0;
-                let max = -1.0;
-                for (let j = 0; j < step; j++) {
-                    var val = data[i * step + j];
-                    if (val < min) min = val;
-                    if (val > max) max = val;
-                }
-                ctx.moveTo(i, (1 + min) * amp);
-                ctx.lineTo(i, (1 + max) * amp);
-            }
-            ctx.stroke();
+        // Draw playhead
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(playheadX, 0, 2, canvas.height);
 
-            // Draw playhead
-            ctx.fillStyle = '#ff0000'; // Red color for the playhead
-            ctx.fillRect(playheadX, 0, 2, canvas.height); // Playhead width is 2px
-
-            if (playbackTime < duration) {
-                animationFrameId = requestAnimationFrame(draw);
-            }
+        if (currentTime < duration) {
+            animationFrameId = requestAnimationFrame(draw);
+        } else {
+            cancelAnimationFrame(animationFrameId); // Stop drawing when audio ends
         }
-        sourceNode.startTime = audioCtx.currentTime;
-        draw(); // Start drawing
     }
+    draw();
+}
 
-    pitchSlider.addEventListener('input', function() {
+pitchSlider.addEventListener('input', function() {
         if (sourceNode) {
             const pitchValue = parseFloat(pitchSlider.value);
             sourceNode.playbackRate.value = pitchValue;
         }
-    });
 });
 </script>
 </body>
 </html>
-
