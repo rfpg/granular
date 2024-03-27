@@ -96,8 +96,13 @@ document.addEventListener('DOMContentLoaded', function() {
             drawWaveform(sourceNode.buffer);
             updatePlayhead(currentTime, sourceNode.buffer.duration / sourceNode.playbackRate.value);
             animationFrameId = requestAnimationFrame(animate);
+
+            // Calculate and print the playback position in samples
+            var playbackPositionInSamples = currentTime * sourceNode.buffer.sampleRate;
+            console.log("Playback Position (in samples):", playbackPositionInSamples);
         }
     }
+
 
     dropZone.addEventListener('dragover', function(ev) {
         ev.preventDefault();
