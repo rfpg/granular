@@ -11,6 +11,7 @@
             text-align: center;
             margin: 20px;
             position: relative; /* Make drop_zone a positioning context */
+            height: 200px; /* Set a fixed height */
             box-sizing: border-box;
         }
         
@@ -35,7 +36,7 @@
 </head>
 <body>
 
-<div id="drop_zone" style="height: 200px;">
+<div id="drop_zone">
     <p>Drag one audio file here to play it.</p>
     <canvas id="audio_visualizer"></canvas>
 </div>
@@ -43,7 +44,8 @@
     <label for="pitchSlider">Pitch Control:</label>
     <input type="range" id="pitchSlider" min="0.5" max="2" value="1" step="0.01">
 </div>
-<audio id="audio_player" controls style="width:100%;"></audio>
+<!-- Removed controls from the audio player -->
+<audio id="audio_player" style="width:100%;"></audio>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -54,6 +56,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var canvas = document.getElementById('audio_visualizer');
     var canvasCtx = canvas.getContext('2d');
     var animationFrameId;
+    var startTime = 0; // Start time of the playback
+    var offsetTime = 0; // Offset to calculate correct position during pitch changes
 
     function drawWaveform(buffer) {
         var data = buffer.getChannelData(0);
@@ -86,11 +90,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function animate() {
-        if (sourceNode && audioCtx.state === 'running') {
+        var currentTime = (audioCtx.currentTime - startTime + offsetTime) * sourceNode.playbackRate.value;
+        if (sourceNode && !sourceNode.paused) {
             canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
             drawWaveform(sourceNode.buffer);
-            var currentTime = audioCtx.currentTime - sourceNode.startTime;
-            updatePlayhead(currentTime, sourceNode.buffer.duration);
+            updatePlayhead(currentTime, sourceNode.buffer.duration / sourceNode.playbackRate.value);
             animationFrameId = requestAnimationFrame(animate);
         }
     }
@@ -117,24 +121,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     sourceNode.connect(audioCtx.destination);
                     drawWaveform(buffer);
                     sourceNode.start(0);
-                    sourceNode.startTime = audioCtx.currentTime;
+                    startTime = audioCtx.currentTime;
+                    offsetTime = 0;
                     animate();
-                    pitchSlider.oninput = function() {
-                        var playbackRate = parseFloat(pitchSlider.value);
-                        sourceNode.playbackRate.value = playbackRate;
-                    };
-
-                                    });
+                });
             };
             reader.readAsArrayBuffer(file);
         }
     });
 
-    // When the audio finishes playing, stop the animation
-    audio_player.onended = function() {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
+    pitchSlider.oninput = function() {
+        var playbackRate = parseFloat(pitchSlider.value);
+        if (sourceNode) {
+            var currentTime = (audioCtx.currentTime - startTime + offsetTime);
+            offsetTime = currentTime - (currentTime / playbackRate);
+            sourceNode.playbackRate.value = playbackRate;
         }
     };
 
@@ -147,7 +148,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Call adjustCanvasSize on page load and window resize
     window.addEventListener('load', adjustCanvasSize);
     window.addEventListener('resize', adjustCanvasSize);
-
 });
 </script>
 </body>
