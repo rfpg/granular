@@ -2,134 +2,162 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Audio Sample Drop, Playback, and Effects</title>
+    <title>Enhanced Audio Playback with Waveform and Playhead</title>
     <style>
-        #drop_zone {
-            border: 2px dashed #007bff;
-            border-radius: 5px;
-            padding: 20px;
-            text-align: center;
-            margin: 20px;
-            position: relative;
-            height: 200px; /* Fixed height for the drop area */
-            box-sizing: border-box;
+        body {
+            font-family: Arial, sans-serif;
         }
-        
+        #drop_zone {
+            border: 3px dashed #007bff;
+            border-radius: 5px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 20px auto;
+            position: relative;
+            width: 80%;
+            height: 150px; /* Adjust height as needed */
+            box-sizing: border-box;
+            color: #aaa;
+            transition: border-color 0.3s, color 0.3s;
+        }
+        #drop_zone.over {
+            border-color: #0288d1;
+            color: #0288d1;
+        }
         #audio_visualizer {
+            width: 100%;
+            height: 100%;
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: transparent;
         }
-        
         #controls {
-            margin: 20px;
             text-align: center;
+            margin: 10px auto;
+            width: 80%;
         }
-        
-        label {
-            margin-right: 10px;
+        canvas {
+            display: block; /* Remove margin/padding around canvas */
+            background: #f8f8f8; /* Light background */
         }
     </style>
 </head>
 <body>
 
-<div id="drop_zone">
-    <p>Drag one audio file here to play it.</p>
-    <canvas id="audio_visualizer"></canvas>
-</div>
+<div id="drop_zone">Drag an audio file here</div>
+<canvas id="audio_visualizer"></canvas>
 <div id="controls">
-    <label for="pitchSlider">Pitch Control:</label>
-    <input type="range" id="pitchSlider" min="0.5" max="2" value="1" step="0.01">
+    <label for="pitchSlider">Pitch:</label>
+    <input type="range" id="pitchSlider" min="0.5" max="2" value="1" step="0.01" style="width: 60%;">
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    var sourceNode = null;
-    var dropZone = document.getElementById('drop_zone');
-    var pitchSlider = document.getElementById('pitchSlider');
-    var canvas = document.getElementById('audio_visualizer');
-    var canvasCtx = canvas.getContext('2d');
-    var duration, lastDrawnAt = 0;
+document.addEventListener('DOMContentLoaded', () => {
+    const dropZone = document.getElementById('drop_zone');
+    const pitchSlider = document.getElementById('pitchSlider');
+    const canvas = document.getElementById('audio_visualizer');
+    const ctx = canvas.getContext('2d');
+    let audioCtx, sourceNode, animationFrameId;
+    let duration = 0;
 
-    function drawWaveform(buffer) {
-        var data = buffer.getChannelData(0);
-        var step = Math.ceil(data.length / canvas.width);
-        var amp = canvas.height / 2;
-        canvasCtx.fillStyle = "rgb(200,200,200)";
-        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+    // Prepare canvas
+    function resizeCanvas() {
+        canvas.width = dropZone.offsetWidth;
+        canvas.height = dropZone.offsetHeight;
+    }
+    resizeCanvas();
+    window.onresize = resizeCanvas;
 
-        for (var i = 0; i < canvas.width; i++) {
-            var min = 1.0;
-            var max = -1.0;
-            for (var j = 0; j < step; j++) {
-                var datum = data[(i * step) + j];
-                if (datum < min) min = datum;
-                if (datum > max) max = datum;
+    dropZone.ondragover = dropZone.ondragenter = function(evt) {
+        evt.preventDefault();
+        dropZone.classList.add('over');
+    };
+
+    dropZone.ondragleave = function() {
+        dropZone.classList.remove('over');
+    };
+
+    dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('over');
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            playAudioFile(files[0]);
+        }
+    };
+
+    function playAudioFile(file) {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (sourceNode) {
+            sourceNode.stop();
+            cancelAnimationFrame(animationFrameId);
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            audioCtx.decodeAudioData(e.target.result, (buffer) => {
+                sourceNode = audioCtx.createBufferSource();
+                sourceNode.buffer = buffer;
+                sourceNode.connect(audioCtx.destination);
+                sourceNode.start(0);
+                duration = buffer.duration;
+                visualize(buffer);
+                sourceNode.onended = () => cancelAnimationFrame(animationFrameId);
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function visualize(buffer) {
+        const bufferLength = buffer.length;
+        const data = buffer.getChannelData(0);
+        const step = Math.ceil(data.length / canvas.width);
+        const amp = canvas.height / 2;
+
+        function draw() {
+            const playbackTime = sourceNode.context.currentTime - sourceNode.startTime;
+            const playheadX = playbackTime / duration * canvas.width;
+
+            ctx.fillStyle = '#f8f8f8';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#d3d3d3';
+
+            ctx.beginPath();
+            for (let i = 0; i < canvas.width; i++) {
+                let min = 1.0;
+                let max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    var val = data[i * step + j];
+                    if (val < min) min = val;
+                    if (val > max) max = val;
+                }
+                ctx.moveTo(i, (1 + min) * amp);
+                ctx.lineTo(i, (1 + max) * amp);
             }
-            canvasCtx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
+            ctx.stroke();
+
+            // Draw playhead
+            ctx.fillStyle = '#ff0000'; // Red color for the playhead
+            ctx.fillRect(playheadX, 0, 2, canvas.height); // Playhead width is 2px
+
+            if (playbackTime < duration) {
+                animationFrameId = requestAnimationFrame(draw);
+            }
         }
+        sourceNode.startTime = audioCtx.currentTime;
+        draw(); // Start drawing
     }
 
-    function animate(playbackRate) {
-        if (!sourceNode) return;
-        var currentTime = audioCtx.currentTime - sourceNode.startTime;
-        var scaledCurrentTime = currentTime * playbackRate;
-        if (scaledCurrentTime >= duration || scaledCurrentTime < lastDrawnAt) {
-            lastDrawnAt = 0; // Reset for next play
-            cancelAnimationFrame(requestId);
-            return; // Stop animation when audio ends or if seeking backwards
+    pitchSlider.addEventListener('input', function() {
+        if (sourceNode) {
+            const pitchValue = parseFloat(pitchSlider.value);
+            sourceNode.playbackRate.value = pitchValue;
         }
-        
-        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-        drawWaveform(sourceNode.buffer); // Redraw waveform
-        updatePlayhead(scaledCurrentTime, duration); // Move playhead
-        
-        lastDrawnAt = scaledCurrentTime;
-        requestId = requestAnimationFrame(() => animate(playbackRate)); // Loop
-    }
-
-    function updatePlayhead(currentTime, totalDuration) {
-        var progress = currentTime / totalDuration;
-        var x = progress * canvas.width;
-        canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.5)'; // Playhead color
-        canvasCtx.fillRect(x, 0, 2, canvas.height); // Draw playhead
-    }
-
-    dropZone.addEventListener('dragover', ev => ev.preventDefault());
-
-    dropZone.addEventListener('drop', function(ev) {
-        ev.preventDefault();
-        if (ev.dataTransfer.items) {
-            var file = ev.dataTransfer.items[0].getAsFile();
-            var reader = new FileReader();
-            reader.onload = e => {
-                audioCtx.decodeAudioData(e.target.result, buffer => {
-                    if (sourceNode) sourceNode.disconnect();
-                    sourceNode = audioCtx.createBufferSource();
-                    sourceNode.buffer = buffer;
-                    sourceNode.connect(audioCtx.destination);
-                    sourceNode.start(0);
-                    sourceNode.startTime = audioCtx.currentTime;
-                    duration = buffer.duration;
-                    animate(parseFloat(pitchSlider.value)); // Start animation with initial pitch
-                });
-            };
-            reader.readAsArrayBuffer(file);
-        }
-    });
-
-    pitchSlider.addEventListener('input', () => {
-        if (!sourceNode) return;
-        var newRate = parseFloat(pitchSlider.value);
-        sourceNode.playbackRate.setValueAtTime(newRate, audioCtx.currentTime);
-        animate(newRate); // Restart animation with new pitch
     });
 });
 </script>
 </body>
 </html>
-               
+
