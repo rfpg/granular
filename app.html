@@ -35,6 +35,7 @@ document.getElementById('audioInput').addEventListener('change', function(event)
                 // Iterate over each sample
                 for (let sample = 0; sample < audioBuffer.length; sample++) {
                     // This is where you can process each sample. Here we're just copying the input to the output.
+                    console.log("Sample number: " + sample);
                     outputData[sample] = inputData[sample];
                 }
             }
