@@ -3,22 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <title>Audio Sample Drop and Playback</title>
-    <link rel="stylesheet" href="style.css"> <!-- Assuming your CSS file is named style.css -->
+    <style>
+        #drop_zone {
+            border: 2px dashed #007bff;
+            border-radius: 5px;
+            padding: 50px;
+            text-align: center;
+            margin: 20px;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 200px;
+            background-color: #f3f3f3;
+        }
+        
+        #controls {
+            margin: 20px;
+            text-align: center;
+        }
+        
+        label {
+            margin-right: 10px;
+        }
+    </style>
 </head>
 <body>
 
-<div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+<div id="drop_zone">
     <p>Drag one audio file here to play it.</p>
     <canvas id="audio_visualizer"></canvas>
 </div>
 <audio id="audio_player" controls></audio>
-<!-- Existing HTML -->
-<!-- Add below within the <body> tag -->
+
 <div id="controls">
     <label for="pitchSlider">Pitch Control:</label>
     <input type="range" id="pitchSlider" min="0.5" max="2" value="1" step="0.01">
 </div>
 
-<script src="script.js"></script> <!-- Assuming your JavaScript file is named script.js -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var dropZone = document.getElementById('drop_zone');
+    var pitchSlider = document.getElementById('pitchSlider');
+    var audioPlayer = document.getElementById('audio_player');
+    var audioVisualizer = document.getElementById('audio_visualizer');
+
+    dropZone.addEventListener('dragover', function(ev) {
+        ev.preventDefault();
+    });
+
+    dropZone.addEventListener('drop', function(ev) {
+        ev.preventDefault();
+        if (ev.dataTransfer.items) {
+            for (var i = 0; i < ev.dataTransfer.items.length; i++) {
+                if (ev.dataTransfer.items[i].kind === 'file') {
+                    var file = ev.dataTransfer.items[i].getAsFile();
+                    playAudio(file);
+                }
+            }
+        }
+    });
+
+    function playAudio(file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            audioPlayer.src = e.target.result;
+            audioPlayer.play();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    audioVisualizer.width = dropZone.offsetWidth;
+    // Add any additional JavaScript here for drawing on the canvas
+    // or other functionalities you want to implement.
+});
+</script>
 </body>
 </html>
