@@ -136,6 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var currentTime = (audioCtx.currentTime - startTime + offsetTime);
             offsetTime = currentTime - (currentTime / playbackRate);
             sourceNode.playbackRate.value = playbackRate;
+            console.log("Playback rate: " + playbackRate);
         }
     };
 
