@@ -234,7 +234,7 @@
         const gainNode = audioCtx.createGain();
 
         osc.frequency.setValueAtTime(150, time); // Start frequency
-        osc.frequency.exponentialRampToValueAtTime(0.001, time + 0.5); // Pitch drops
+        osc.frequency.exponentialRampToValueAtTime(40, time + 0.5); // Pitch drops
 
         gainNode.gain.setValueAtTime(1, time);
         gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.5); // Volume drops
@@ -273,7 +273,34 @@
         noise.stop(time + 0.2);
     }
 
-    function schedule808Beat() {
+    function playHiHat(time) {
+        const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+
+        for (let i = 0; i < noiseBuffer.length; i++) {
+            output[i] = Math.random() * 2 - 1; // White noise
+        }
+
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = noiseBuffer;
+
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noiseFilter.type = 'highpass';
+        noiseFilter.frequency.setValueAtTime(8000, time);
+
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(0.3, time);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+
+        noise.start(time);
+        noise.stop(time + 0.05);
+    }
+
+    function scheduleTrapBeat() {
         if (nextClickTime < audioCtx.currentTime) {
             nextClickTime = audioCtx.currentTime;
         }
@@ -281,30 +308,36 @@
         const intervalTime = 60 / parseFloat(grainSizeSlider.value); // Time in seconds between beats
 
         while (nextClickTime < audioCtx.currentTime + 0.1) {
-            // Schedule kick on beats 1 and 2
+            // Schedule kick on beats 1 and 3
             playKick(nextClickTime);
-            playKick(nextClickTime + intervalTime);
+            playKick(nextClickTime + intervalTime * 2);
 
             // Schedule snare on beat 3
             playSnare(nextClickTime + intervalTime * 2);
+
+            // Schedule hi-hats on all beats
+            playHiHat(nextClickTime);
+            playHiHat(nextClickTime + intervalTime);
+            playHiHat(nextClickTime + intervalTime * 2);
+            playHiHat(nextClickTime + intervalTime * 3);
 
             nextClickTime += intervalTime * 4; // Move to the next measure
         }
 
         if (beatRunning) {
-            requestAnimationFrame(schedule808Beat);
+            requestAnimationFrame(scheduleTrapBeat);
         }
     }
 
     metronomeButton.addEventListener('click', function () {
         if (beatRunning) {
             beatRunning = false;
-            metronomeButton.textContent = 'Start 808 Beat';
+            metronomeButton.textContent = 'Start Trap Beat';
         } else {
             beatRunning = true;
             nextClickTime = audioCtx.currentTime;
-            schedule808Beat();
-            metronomeButton.textContent = 'Stop 808 Beat';
+            scheduleTrapBeat();
+            metronomeButton.textContent = 'Stop Trap Beat';
         }
     });
 
@@ -338,6 +371,7 @@
     window.addEventListener('load', adjustCanvasSize);
     window.addEventListener('resize', adjustCanvasSize);
 });
+
 
     </script>
 </body>
