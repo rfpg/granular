@@ -37,6 +37,16 @@
             background-color: transparent;
         }
 
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 255, 0); /* Initial transparent blue */
+            pointer-events: none; /* So the overlay doesn't block interaction */
+        }
+
         #controls {
             margin: 20px auto;
             text-align: center;
@@ -49,9 +59,17 @@
             color: #33FF33;
         }
 
+        #bpmDisplay {
+            display: inline-block;
+            width: 50px;
+            text-align: left;
+            color: #33FF33;
+            font-weight: bold;
+        }
+
         input[type="range"] {
             -webkit-appearance: none;
-            width: 100%;
+            width: 80%;
             background: #333;
             cursor: pointer;
         }
@@ -71,6 +89,21 @@
             background: #33FF33;
             cursor: pointer;
         }
+
+        #metronomeButton {
+            background-color: #111;
+            border: 2px solid #33FF33;
+            color: #33FF33;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+
+        #metronomeButton:active {
+            background-color: #333;
+        }
     </style>
 </head>
 
@@ -79,128 +112,233 @@
     <div id="drop_zone">
         <p>Drag one audio file here to play it.</p>
         <canvas id="audio_visualizer"></canvas>
+        <div id="overlay"></div>
     </div>
     <div id="controls">
-        <label for="grainSizeSlider">Grain Size Control (ms):</label>
-        <input type="range" id="grainSizeSlider" min="10" max="1000" value="100" step="10">
+        <label for="grainSizeSlider">Grain Size Control (BPM):</label>
+        <input type="range" id="grainSizeSlider" min="40" max="240" value="120" step="1">
+        <span id="bpmDisplay">120</span>
+        <!-- <button id="metronomeButton">Start Beat</button> -->
     </div>
     <audio id="audio_player" style="display:none;"></audio>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            var dropZone = document.getElementById('drop_zone');
-            var grainSizeSlider = document.getElementById('grainSizeSlider');
-            var canvas = document.getElementById('audio_visualizer');
-            var canvasCtx = canvas.getContext('2d');
-            var animationFrameId;
-            var grainSize = parseFloat(grainSizeSlider.value) / 1000; // size of each grain in seconds
-            var grainOverlap = 0.05; // overlap between grains in seconds
-            var numGrains = 10;
-            var grains = [];
+  document.addEventListener('DOMContentLoaded', function () {
+    var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var dropZone = document.getElementById('drop_zone');
+    var grainSizeSlider = document.getElementById('grainSizeSlider');
+    var bpmDisplay = document.getElementById('bpmDisplay');
+    var metronomeButton = document.getElementById('metronomeButton');
+    var canvas = document.getElementById('audio_visualizer');
+    var canvasCtx = canvas.getContext('2d');
+    var overlay = document.getElementById('overlay');
+    var animationFrameId;
+    var grainSize = 60 / parseFloat(grainSizeSlider.value); // size of each grain in seconds, calculated from BPM
+    var grainOverlap = 0.05; // overlap between grains in seconds
+    var numGrains = 10;
+    var grains = [];
+    var beatRunning = false;
+    var nextClickTime = 0;
 
-            grainSizeSlider.oninput = function () {
-                grainSize = parseFloat(grainSizeSlider.value) / 1000;
-                console.log("Grain size: " + grainSize + " seconds");
+    bpmDisplay.textContent = grainSizeSlider.value; // Initialize display
+
+    grainSizeSlider.oninput = function () {
+        var bpm = parseFloat(grainSizeSlider.value);
+        grainSize = 60 / bpm;
+        bpmDisplay.textContent = bpm; // Update the display with the current BPM
+        console.log("Grain size: " + grainSize + " seconds (BPM: " + bpm + ")");
+    };
+
+    function createGrains(buffer) {
+        var bufferDuration = buffer.duration;
+
+        function scheduleGrains() {
+            // Clear any previously scheduled grains
+            grains.forEach(grain => grain.stop());
+            grains = [];
+
+            for (var i = 0; i < numGrains; i++) {
+                let grainSource = audioCtx.createBufferSource();
+                grainSource.buffer = buffer;
+
+                // Randomize the start position of the grain within the buffer duration
+                let randomStart = Math.random() * (bufferDuration - grainSize);
+                let grainOffset = Math.random() * grainOverlap - grainOverlap / 2; // Randomize offset within overlap range
+
+                // Calculate the exact start time considering the current context time and offset
+                let exactStartTime = audioCtx.currentTime + i * (grainSize - grainOverlap) + grainOffset;
+
+                // Ensure start time is non-negative
+                if (exactStartTime < audioCtx.currentTime) {
+                    exactStartTime = audioCtx.currentTime;
+                }
+
+                // Ensure grain does not exceed buffer duration
+                let grainEndTime = Math.min(randomStart + grainSize, bufferDuration);
+                let grainDuration = grainEndTime - randomStart;
+
+                // Schedule the grain
+                grainSource.start(exactStartTime, randomStart, grainDuration);
+                grainSource.connect(audioCtx.destination);
+                grains.push(grainSource);
+
+                // Clear the grain after it finishes
+                grainSource.onended = () => {
+                    grains = grains.filter(g => g !== grainSource);
+                    if (grains.length === 0) {
+                        // If all grains are done, reschedule
+                        scheduleGrains();
+                    }
+                };
+            }
+
+            animateOverlay(); // Start the overlay animation loop
+        }
+
+        // Schedule the grains to start
+        scheduleGrains();
+    }
+
+    function drawWaveform(buffer) {
+        var data = buffer.getChannelData(0);
+        var step = Math.ceil(data.length / canvas.width);
+        var amp = canvas.height / 2;
+        canvasCtx.fillStyle = "#33FF33";
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+        for (var i = 0; i < canvas.width; i++) {
+            var min = 1.0;
+            var max = -1.0;
+            for (var j = 0; j < step; j++) {
+                var datum = data[(i * step) + j];
+                if (datum < min) min = datum;
+                if (datum > max) max = datum;
+            }
+            canvasCtx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
+        }
+    }
+
+    function animateOverlay() {
+        const time = audioCtx.currentTime;
+        const beatTime = 60 / parseFloat(grainSizeSlider.value);
+        const pulse = Math.sin((2 * Math.PI * (time % beatTime)) / beatTime);
+        const opacity = 0.1 + 0.1 * pulse; // Varies between 0.1 and 0.2
+
+        overlay.style.backgroundColor = `rgba(0, 0, 255, ${opacity})`;
+
+        animationFrameId = requestAnimationFrame(animateOverlay);
+    }
+
+    function playKick(time) {
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        osc.frequency.setValueAtTime(150, time); // Start frequency
+        osc.frequency.exponentialRampToValueAtTime(0.001, time + 0.5); // Pitch drops
+
+        gainNode.gain.setValueAtTime(1, time);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.5); // Volume drops
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc.start(time);
+        osc.stop(time + 0.5);
+    }
+
+    function playSnare(time) {
+        const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.5, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+
+        for (let i = 0; i < noiseBuffer.length; i++) {
+            output[i] = Math.random() * 2 - 1; // White noise
+        }
+
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = noiseBuffer;
+
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noiseFilter.type = 'highpass';
+        noiseFilter.frequency.setValueAtTime(1500, time);
+
+        const noiseGain = audioCtx.createGain();
+        noiseGain.gain.setValueAtTime(1, time);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(audioCtx.destination);
+
+        noise.start(time);
+        noise.stop(time + 0.2);
+    }
+
+    function schedule808Beat() {
+        if (nextClickTime < audioCtx.currentTime) {
+            nextClickTime = audioCtx.currentTime;
+        }
+
+        const intervalTime = 60 / parseFloat(grainSizeSlider.value); // Time in seconds between beats
+
+        while (nextClickTime < audioCtx.currentTime + 0.1) {
+            // Schedule kick on beats 1 and 2
+            playKick(nextClickTime);
+            playKick(nextClickTime + intervalTime);
+
+            // Schedule snare on beat 3
+            playSnare(nextClickTime + intervalTime * 2);
+
+            nextClickTime += intervalTime * 4; // Move to the next measure
+        }
+
+        if (beatRunning) {
+            requestAnimationFrame(schedule808Beat);
+        }
+    }
+
+    metronomeButton.addEventListener('click', function () {
+        if (beatRunning) {
+            beatRunning = false;
+            metronomeButton.textContent = 'Start 808 Beat';
+        } else {
+            beatRunning = true;
+            nextClickTime = audioCtx.currentTime;
+            schedule808Beat();
+            metronomeButton.textContent = 'Stop 808 Beat';
+        }
+    });
+
+    dropZone.addEventListener('dragover', function (ev) {
+        ev.preventDefault();
+    });
+
+    dropZone.addEventListener('drop', function (ev) {
+        ev.preventDefault();
+        if (ev.dataTransfer.items) {
+            var file = ev.dataTransfer.items[0].getAsFile();
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                audioCtx.decodeAudioData(e.target.result, function (buffer) {
+                    createGrains(buffer);
+                    drawWaveform(buffer);
+                });
             };
+            reader.readAsArrayBuffer(file);
+        }
+    });
 
-            function createGrains(buffer) {
-                var bufferDuration = buffer.duration;
+    function adjustCanvasSize() {
+        canvas.width = dropZone.offsetWidth;
+        canvas.height = dropZone.offsetHeight;
+    }
 
-                function scheduleGrains() {
-                    // Clear any previously scheduled grains
-                    grains.forEach(grain => grain.stop());
-                    grains = [];
+    window.addEventListener('load', adjustCanvasSize);
+    window.addEventListener('resize', adjustCanvasSize);
+});
 
-                    for (var i = 0; i < numGrains; i++) {
-                        let grainSource = audioCtx.createBufferSource();
-                        grainSource.buffer = buffer;
-
-                        // Randomize the start position of the grain within the buffer duration
-                        let randomStart = Math.random() * (bufferDuration - grainSize);
-                        let grainOffset = Math.random() * grainOverlap - grainOverlap / 2; // Randomize offset within overlap range
-
-                        // Calculate the exact start time considering the current context time and offset
-                        let exactStartTime = audioCtx.currentTime + i * (grainSize - grainOverlap) + grainOffset;
-
-                        // Ensure start time is non-negative
-                        if (exactStartTime < audioCtx.currentTime) {
-                            exactStartTime = audioCtx.currentTime;
-                        }
-
-                        // Ensure grain does not exceed buffer duration
-                        let grainEndTime = Math.min(randomStart + grainSize, bufferDuration);
-                        let grainDuration = grainEndTime - randomStart;
-
-                        // Schedule the grain
-                        grainSource.start(exactStartTime, randomStart, grainDuration);
-                        grainSource.connect(audioCtx.destination);
-                        grains.push(grainSource);
-
-                        // Clear the grain after it finishes
-                        grainSource.onended = () => {
-                            grains = grains.filter(g => g !== grainSource);
-                            if (grains.length === 0) {
-                                // If all grains are done, reschedule
-                                scheduleGrains();
-                            }
-                        };
-                    }
-                }
-
-                // Schedule the grains to start
-                scheduleGrains();
-            }
-
-            function drawWaveform(buffer) {
-                var data = buffer.getChannelData(0);
-                var step = Math.ceil(data.length / canvas.width);
-                var amp = canvas.height / 2;
-                canvasCtx.fillStyle = "#33FF33";
-                canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-
-                for (var i = 0; i < canvas.width; i++) {
-                    var min = 1.0;
-                    var max = -1.0;
-                    for (var j = 0; j < step; j++) {
-                        var datum = data[(i * step) + j];
-                        if (datum < min) min = datum;
-                        if (datum > max) max = datum;
-                    }
-                    canvasCtx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp));
-                }
-            }
-
-            dropZone.addEventListener('dragover', function (ev) {
-                ev.preventDefault();
-            });
-
-            dropZone.addEventListener('drop', function (ev) {
-                ev.preventDefault();
-                if (ev.dataTransfer.items) {
-                    var file = ev.dataTransfer.items[0].getAsFile();
-                    var reader = new FileReader();
-                    reader.onload = function (e) {
-                        if (animationFrameId) {
-                            cancelAnimationFrame(animationFrameId);
-                        }
-                        audioCtx.decodeAudioData(e.target.result, function (buffer) {
-                            createGrains(buffer);
-                            drawWaveform(buffer);
-                        });
-                    };
-                    reader.readAsArrayBuffer(file);
-                }
-            });
-
-            function adjustCanvasSize() {
-                canvas.width = dropZone.offsetWidth;
-                canvas.height = dropZone.offsetHeight;
-            }
-
-            window.addEventListener('load', adjustCanvasSize);
-            window.addEventListener('resize', adjustCanvasSize);
-        });
     </script>
 </body>
 
